@@ -1,0 +1,3 @@
+g++ CWUSchedulingPCBSimulator.cpp -o PCBSimulator
+./PCBSimulator processesFall2022a.bin 1 1.0
+rm PCBSimulator
