@@ -2,11 +2,11 @@
 #include <iostream>
 #include <fstream>
 #include <queue>
+#include <list>
 #include <atomic>
 #include <chrono>
 #include <thread>
 #include <pthread.h>
-
 using namespace std;
 
 //global variables:
@@ -50,14 +50,34 @@ class Processor {
         return ready_queue.size();
     }
     // call every 5 seconds from super thread to increase the priority
+    // needs semaphore flag from super
     void priority_quantum() 
     {
-        //TODO
+        for(int i = 0 ; i < ready_queue.size(); i++)
+        {
+            list<PCB> queue;
+            
+        }
     }
     PCB get_next_PCB()
     {
         PCB pcb;
-        if(selection == '1')
+        if(selection == '1') //FCFS
+        {
+            pcb = ready_queue.front();
+            ready_queue.pop();
+        }
+        else if (selection == '2') // Round Robin TODO
+        {
+            pcb = ready_queue.front();
+            ready_queue.pop();
+        }
+        else if (selection == '3') // Shortest Job First TODO
+        {
+            pcb = ready_queue.front();
+            ready_queue.pop();
+        }
+        else if (selection == '4') // Priority Scheduling TODO
         {
             pcb = ready_queue.front();
             ready_queue.pop();
@@ -65,14 +85,21 @@ class Processor {
         
         return pcb;
     }
-    PCB* scrape_processes(int threshold)
+
+    list<PCB> scrape_processes(int threshold)
     {
-        //TO-DO
-        return NULL;
+        list<PCB> result;
+        while(ready_queue.size() > threshold)
+        {
+            result.push_front(ready_queue.front());
+            ready_queue.pop();
+        }
+        return result;
     }
-    void fill_process_queue(PCB* procs)
+    
+    void add_process(PCB proc)
     {
-        //TO-DO
+        ready_queue.push(proc);
     }
 
 // priority scheduling
@@ -145,24 +172,69 @@ static void* processor_management(void* args)
             if(processors[i].get_total_processes_remaining() == 0)
             {
                 needs_redistribute = true;
-                cout << "core " << i << " has run out of processes" << endl;
+                //cout << "core " << i << " has run out of processes" << endl;
             }
             else
             {
                 process_remain_flag = true;
             }
         }
-        if(!process_remain_flag) 
-            processes_remain = false;
-            // if it is every core, there are no processes_remain
-            // else 
-                // redistribute
         
+        processes_remain = process_remain_flag; 
+                // redistribute
+        if(needs_redistribute)
+        {
+            semaphore_counter++;
+            int total_processes =0;
+            for(int i = 0; i < num_cores; i++)
+            {
+                total_processes+= processors[i].get_total_processes_remaining();
+            }
+            int average = total_processes/num_cores;
+            int remainder = total_processes%num_cores;
+            list<PCB> span_extras;
+
+            for(int i = 0; i< num_cores;i++)
+            {
+                int num_procs = processors[i].get_total_processes_remaining();
+                if(average >= num_procs)
+                {
+                    int diff = average - num_procs;
+                    list<PCB> extras = processors[i].scrape_processes(diff);
+                    for(int j = 0; j < diff; j++)
+                    {
+                        span_extras.push_front(extras.front());
+                        extras.pop_front();
+                    }
+                }
+            }
+            for(int i = 0; i < num_cores; i++)
+            {
+                int num_procs = processors[i].get_total_processes_remaining();
+                int diff = average - num_procs;
+                for(int j = 0; j < diff; j++)
+                {
+                    processors[i].add_process(span_extras.back());
+                    span_extras.pop_back();
+                }
+            }
+            semaphore_counter--;
+        }
     }
 
     return NULL;
 }
-
+int* distribution_partition(int total_processes, double* percentages)
+{
+    int* partitions = (int*)malloc(sizeof(int) * num_cores);
+    double running_total;
+    for(int i = 0; i < num_cores; i++)
+    {
+        running_total += percentages[i];
+        partitions[i] = (total_processes -1) * running_total;
+    }
+    return partitions;
+}
 int main(int argc, char** argv)
 {
     //init global variables
@@ -178,14 +250,19 @@ int main(int argc, char** argv)
     string process_file = argv[1];
     cout << process_file << endl;
 
+    num_cores = (argc / 2) - 1;
     double total_percentage = 0.0;
+    double* percentages = (double*) malloc(sizeof(double) * num_cores);
+
     for(int i = 2; i < argc; i+=2)
     {
         cout << argv[i] << " " << argv[i+1] << endl;
         int selection = stoi(argv[i]);
-        total_percentage += stod(argv[i+1]);
-        num_cores++;
+        double percentage = stod(argv[i+1]);
+        total_percentage += percentage;
+        percentages[(i/2)-1] = percentage;
     }
+
     if(total_percentage != 1.0)
     {
         cout << "Incorrect percentages given" << endl;
@@ -216,20 +293,24 @@ int main(int argc, char** argv)
     {
         readFile.read((char*)&processes[i], sizeof(processes));
         total_files += processes[i].number_of_files;
-    }
+    }  
     cout << "total amount of memory allocated by all processes: " << endl; //TO-DO
     cout << "total number of processes: " << total_processes << endl;
     cout << "total number of files over all processes: " << total_files << endl;
     Processor* cores = (Processor*)malloc(sizeof(Processor) * num_cores);
     pthread_t coreIDs[num_cores];
-    //assume one super core for now
+    //assign PCB processes into the different cores
+    int* partitions =  distribution_partition(total_processes,percentages);
+    int fencepost = 0;
     for(int i = 0; i < num_cores; i++)
     {
+
+        PCB* processes_to_run[partitions[i] - fencepost];
+        fencepost = partitions[i];
         char selection = argv[(i+ 1)*2][0];
         cores[i] = Processor(selection,processes,total_processes);
         pthread_create(&coreIDs[i],NULL,run_processor, (void*) &cores[i]); 
         cout << "creating core thread " << endl;       
-        //pthread_join(coreIDs[i], NULL); // join the thread so that supervisor can manage
     }
 
     //create supervisor thread
@@ -239,7 +320,7 @@ int main(int argc, char** argv)
     pthread_join(super_thread_id,NULL);
     for(int i = 0; i < num_cores; i++)
     {
-        pthread_join(coreIDs[i],NULL);
+        pthread_join(coreIDs[i],NULL); // join the thread so that supervisor can manage
     }
     cout << "exiting main" << endl;
 }
