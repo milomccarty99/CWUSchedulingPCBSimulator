@@ -224,16 +224,40 @@ static void* processor_management(void* args)
 
     return NULL;
 }
-int* distribution_partition(int total_processes, double* percentages)
+// int* distribution_partition(int total_processes, double* percentages)
+// {
+//     int* partitions = (int*)malloc(sizeof(int) * num_cores);
+//     double running_total;
+//     for(int i = 0; i < num_cores; i++)
+//     {
+//         running_total += percentages[i];
+//         partitions[i] = (total_processes -1) * running_total;
+//     }
+//     return partitions;
+// }
+void distribute_processes(Processor* &cores, double* &percentages, PCB* &processes, int num_processes)
 {
-    int* partitions = (int*)malloc(sizeof(int) * num_cores);
-    double running_total;
+    int process_counter = 0;
+    cout << cores[0].get_total_processes_remaining() << endl;
+
     for(int i = 0; i < num_cores; i++)
     {
-        running_total += percentages[i];
-        partitions[i] = (total_processes -1) * running_total;
+        int amount_distribute = percentages[i]*num_processes;
+        cout << "distributing " << amount_distribute << "processes to core " << i;
+        for(int j = 0; j < amount_distribute; j++)
+        {
+            cout << " adding process " << &processes[process_counter].name << "to core";
+            cores[i].add_process(processes[process_counter]);
+            process_counter++;
+        }   
     }
-    return partitions;
+    while (process_counter < num_processes)
+    {
+        cores[process_counter%num_cores].add_process(processes[process_counter]);
+        process_counter++;
+    }
+
+    //return NULL;
 }
 int main(int argc, char** argv)
 {
@@ -300,18 +324,7 @@ int main(int argc, char** argv)
     Processor* cores = (Processor*)malloc(sizeof(Processor) * num_cores);
     pthread_t coreIDs[num_cores];
     //assign PCB processes into the different cores
-    int* partitions =  distribution_partition(total_processes,percentages);
-    int fencepost = 0;
-    for(int i = 0; i < num_cores; i++)
-    {
-
-        PCB* processes_to_run[partitions[i] - fencepost];
-        fencepost = partitions[i];
-        char selection = argv[(i+ 1)*2][0];
-        cores[i] = Processor(selection,processes,total_processes);
-        pthread_create(&coreIDs[i],NULL,run_processor, (void*) &cores[i]); 
-        cout << "creating core thread " << endl;       
-    }
+    //distribute_processes(cores,percentages,processes,total_processes);
 
     //create supervisor thread
     pthread_t super_thread_id;
