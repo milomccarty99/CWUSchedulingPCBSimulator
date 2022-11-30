@@ -123,15 +123,17 @@ public:
     // bubble sort by priority
     void sort_priority(int coreindex)
     {
-        for (int i = 0; i < cores[coreindex].num_core_procs - 1; i++)
+        for (int i = 0; i < cores[coreindex].num_core_procs ; i++)
         {
-            for (int j = 0; j < cores[coreindex].num_core_procs - i - 1; j++)
+            for (int j = 0; j < cores[coreindex].num_core_procs ; j++)
             {
                 char priorityl = processes[cores[coreindex].process_index_list[i]].priority;
                 char priorityr = processes[cores[coreindex].process_index_list[j]].priority;
                 if (priorityr > priorityl)
                 {
                     swap(cores[coreindex].process_index_list[i], cores[coreindex].process_index_list[j]);
+                    //i--;
+                    j;
                 }
             }
         }
@@ -139,9 +141,9 @@ public:
     // bubble sort by cpu burst time
     void sort_shortest(int coreindex)
     {
-        for (int i = 0; i < cores[coreindex].num_core_procs - 1; i++)
+        for (int i = 0; i < cores[coreindex].num_core_procs; i++)
         {
-            for (int j = 0; j < cores[coreindex].num_core_procs - i - 1; j++)
+            for (int j = 0; j < cores[coreindex].num_core_procs; j++)
             {
                 int priorityl = processes[cores[coreindex].process_index_list[i]].cpu_burst_time;
                 int priorityr = processes[cores[coreindex].process_index_list[j]].cpu_burst_time;
