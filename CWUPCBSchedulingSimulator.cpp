@@ -119,6 +119,10 @@ public:
         {
             sort_priority(coreindex);
         }
+        else
+        {
+            throw std::exception();
+        }
     }
     // bubble sort by priority
     void sort_priority(int coreindex)
@@ -157,6 +161,7 @@ public:
     //random "sort"
     void sort_round_robin(int coreindex)
     {
+        //ever process is equal. cpu time is shared among all processes.
         for (int i = 0; i < cores[coreindex].num_core_procs; i++)
         {
             int index = rand() % cores[coreindex].num_core_procs;
