@@ -11,10 +11,6 @@
 
 using namespace std;
 
-int num_cores;
-bool processes_remain;
-atomic_int semaphore_counter;
-
 #pragma pack(1) //1 byte packing
 typedef struct _PCB {
     char priority;
@@ -22,157 +18,153 @@ typedef struct _PCB {
     int processID;
     char activity_status;
     int cpu_burst_time;
-    int base_register;
-    uint64_t limit_register;
+    int base_register; // lowest address
+    uint64_t limit_register; // number of bytes allocated
     char process_type;
     int number_of_files;
 }PCB;
+typedef struct _Core {
+    int num_core_procs;
+    int num_finished_procs;
+    int* process_index_list; // this contains the ordering
 
-class Processor {
-    list<PCB> processes;
-    int selection = 0;
-    public:
-    Processor(int selection)
+}Core;
+class Processors {
+    int num_cores;
+    Core* cores;
+    int num_procs;
+    int num_procs_remaining;
+    PCB* processes;
+    bool* completed_procs;
+    bool processes_remaining;
+    int* algorithms_used;
+public:
+    Processors(int* algos, double* percent_allocated, int num_cores, PCB* processes, int num_procs)
     {
-        this->selection = selection;
-        
+        this->num_cores = num_cores;
+        this->num_procs = num_procs;
+        this->num_procs_remaining = num_procs;
+        this->processes = processes;
+        this->completed_procs = (bool*)malloc(sizeof(bool) * num_procs);
+        this->processes_remaining = true;
+        this->algorithms_used = algos;
+        distribute_cores(percent_allocated);
     }
-    void add_process(PCB process)
+
+    PCB& get_next_process(int core_index)
     {
-        if(selection == 1)
+        //int algo = algorithms_used[core_index];
+        // get the corresponding index from the core's listing
+        int core_list_index = cores[core_index].num_finished_procs;
+        if (core_list_index >= cores[core_index].num_core_procs) // if the core has run out of processes
         {
-            processes.push_back(process);
+            return nullptr; // return nullptr;
         }
-        else
+        int proc_index = cores[core_index].process_index_list[core_list_index];
+        cores[core_index].num_finished_procs++;
+        this->num_procs_remaining--;
+        completed_procs[proc_index] = true;
+        return processes[proc_index];
+
+    }
+    void sort_core(int coreindex)
+    {
+        int algo = algorithms_used[coreindex];
+        if (algo == 1)
         {
-            processes.push_back(process);
+            sort_FCFS(coreindex);
+        }
+        else if (algo == 2)
+        {
+            sort_round_robin(coreindex);
+        }
+        else if (algo == 3)
+        {
+            sort_shortest(coreindex);
+        }
+        else if (algo == 4)
+        {
+            sort_priority(coreindex);
         }
     }
-    PCB* get_next_process()
+    void sort_priority(int coreindex)
     {
-        PCB* result = new PCB(processes.front());
-        //if(result != nullptr)
+
+    }
+    
+    void sort_shortest(int coreindex)
+    {
+
+    }
+
+    void sort_round_robin(int coreindex)
+    {
+
+    }
+
+    void sort_FCFS(int coreindex)
+    {
+
+    }
+    //order is chosen on core allocation
+    void distribute_cores(double* percents)
+    {
+        // get distributions for each core
+        int dist_total = 0;
+        for (int i = 0; i < this->num_cores; i++)
         {
-            processes.pop_front();
+            cores[i].num_finished_procs = 0;
+            cores[i].num_core_procs = percents[i] * num_procs_remaining;
+            dist_total += cores[i].num_core_procs;
         }
-        return result;
+        while (dist_total < num_procs_remaining)
+        {
+            cores[dist_total % num_cores].num_core_procs++;
+            dist_total++;
+        }
+        //now distribute processes accordingly
+        int proc_pointer = 0;
+        for (int i = 0; i < num_cores; i++)
+        {
+            cores[i].process_index_list = (int*)malloc(sizeof(int) * cores[i].num_core_procs);
+            for (int j = 0; j < cores[i].num_core_procs && proc_pointer < this->num_procs; j++, proc_pointer++)
+            {
+                if (!completed_procs[proc_pointer])
+                {
+                    cores[i].process_index_list[j] = proc_pointer;
+                }
+                else 
+                {
+                    j--;
+                }
+            }
+            // sort core according to algorithm
+            sort_core(i);
+        }
+    }
+    void distribute_cores()
+    {
+        double percents[num_cores];
+        double equal_percent = (1.0 / ((double)num_cores));
+        memset(percents, equal_percent, sizeof(double) * num_cores); // this should be correct
+        distribute_cores(percents);
     }
 
 };
-void distribute_processes(Processor* cores, double* percentages, PCB* processes, int num_processes)
-{
-    int process_counter = 0;
-    for(int i = 0; i < num_cores; i++)
-    {
-        int amount_distribute = percentages[i]*num_processes;
-        for(int j = 0; j < amount_distribute; j++, process_counter++)
-        {
-            cores[i].add_process(processes[process_counter]);
-        }
-    }
-    while (process_counter < num_processes)
-    {
-        cores[process_counter%num_cores].add_process(processes[process_counter]);
-        process_counter++;
-    }
 
-    //return NULL;
-}
 void* manage_cores(void* arg)
 {
-    Processor* cores = (Processor*) arg;
-    while(processes_remain)
-    {
-        
-    }
-    
-
     return NULL;
 }
 
 void* run_processor(void* arg)
 {
-    Processor core = ((Processor*)arg)[0];
-    
-
-    while(processes_remain)
-    {
-        while(semaphore_counter>0)
-            ;
-        PCB* working_proc = core.get_next_process();
-        &working_proc->activity_status;
-    }
+   
     return NULL;
 }
 
 int main(int argc, char** argv)
 {
-    processes_remain = true;
-    if(argc < 4 || argc %2 == 1)
-    {
-        // if there is less than 1 core or if there is an incomplete core
-        cout << "Improper minimum arguments met for core." << endl;
-        return -1;
-    }
-    string process_file = argv[1];
-    //cout << process_file << endl;
-
-    num_cores = (argc / 2) - 1;
-    double total_percentage = 0.0;
-    double* percentages = (double*) malloc(sizeof(double) * num_cores);
-    int* selections = (int*) malloc(sizeof(int)*num_cores);
-    for(int i = 2; i < argc; i+=2)
-    {
-        //cout << argv[i] << " " << argv[i+1] << endl;
-        int selection = stoi(argv[i]);
-        selections[i] = selection;
-        double percentage = stod(argv[i+1]);
-        total_percentage += percentage;
-        percentages[(i/2)-1] = percentage;
-    }
-
-    if(total_percentage != 1.0)
-    {
-        cout << "Incorrect percentages given" << endl;
-        return -1;
-    }
-    
-    //cout << "size of pcb: " << sizeof(PCB) << endl;
-    ifstream readFile (process_file);
-
-    if(!readFile)
-    {
-        cout<<"an error has occurred in reading the file" << endl;
-        return -1;
-    }
-    
-    readFile.seekg(0,ios::end);
-    int file_size = readFile.tellg();
-    int total_processes = file_size/sizeof(PCB);
-    readFile.seekg(0,ios::beg);
-    if(file_size%sizeof(PCB))
-    {
-        cout<< "binary file size mismatch" << endl;
-        return -1;
-    }
-    PCB processes[total_processes];
-    Processor* cores = (Processor*)malloc(sizeof(Processor) * num_cores);
-    for(int i = 0; i < num_cores; i++)
-    {
-        cores[i] = Processor(selections[i]);
-    }
-    int total_files = 0;
-    for(int i = 0; i < total_processes; i++)
-    {
-        //todo: add up total memory allocated
-        readFile.read((char*)&processes[i], sizeof(processes));
-        total_files += processes[i].number_of_files;
-    }  
-    cout << "total amount of memory allocated by all processes: " << endl; //TO-DO
-    cout << "total number of processes: " << total_processes << endl;
-    cout << "total number of files over all processes: " << total_files << endl;
-    distribute_processes(cores,percentages,processes,total_processes);
-    list<PCB> blah;
-    cout << blah.front().name << endl;
-    blah.pop_front();
+   
+   
 }
