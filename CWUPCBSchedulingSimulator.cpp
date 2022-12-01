@@ -14,8 +14,8 @@
 #include <stdexcept>
 #include <tuple>
 
-#define PRIORITY_TIME_QUANTUM 5.0
-
+#define PRIORITY_TIME_QUANTUM 5.0 //5 s quantum
+#define ROUND_ROBIN_QUANTUM 0.02 // 20 ms quantum
 using namespace std;
 
 
@@ -36,7 +36,7 @@ typedef struct _Core {
     int num_core_procs;
     int num_finished_procs;
     int* process_index_list; // this contains the ordering
-
+    int round_robin_index; // special index strictly for RR processors 
 }Core;
 
 class Processors {
@@ -75,6 +75,10 @@ public:
         
         return result;
     }
+    bool is_round_robin(int coreindex)
+    {
+        return this->algorithms_used[coreindex] == 2;
+    }
     // gets the number of processes total remaining
     int get_num_process()
     {
@@ -95,9 +99,26 @@ public:
         this->num_procs_remaining--;
         this->processes_remaining = num_procs_remaining > 0;
         completed_procs[proc_index] = true;
-        processes_remaining = this->num_procs_remaining > 0;
         return processes[proc_index];
 
+    }
+    PCB& get_round_robin_process(int coreindex)
+    {
+        int core_list_index = cores[coreindex].round_robin_index; 
+        int proc_index = cores[coreindex].process_index_list[core_list_index];
+        cores[coreindex].round_robin_index = (cores[coreindex].round_robin_index + 1) % cores[coreindex].num_core_procs; // update RR pointer
+        // decrement burst time
+        processes[proc_index].cpu_burst_time = processes[proc_index].cpu_burst_time - ((ROUND_ROBIN_QUANTUM) * 1000);
+        if (processes[proc_index].cpu_burst_time <= 0)
+        {
+            cout << "finished round robin process " << processes[proc_index].name << endl;
+            // if reached 0, update num_procs_remaining and num_finished_procs completed_procs processes_remaining          
+            cores[coreindex].num_finished_procs++;
+            this->num_procs_remaining--;
+            this->processes_remaining = this->num_procs_remaining > 0;
+            completed_procs[proc_index] = true;
+        }
+        return processes[proc_index];
     }
     // sortation by algorithm selected for the core coreindex
     void sort_core(int coreindex)
@@ -121,6 +142,7 @@ public:
         }
         else
         {
+            cout << "incorrect algorithm chosen on core " << coreindex << ". Please choose an algorithm between 1-4." << endl;
             throw std::exception();
         }
     }
@@ -136,8 +158,6 @@ public:
                 if (priorityr > priorityl)
                 {
                     swap(cores[coreindex].process_index_list[i], cores[coreindex].process_index_list[j]);
-                    //i--;
-                    j;
                 }
             }
         }
@@ -161,12 +181,13 @@ public:
     //random "sort"
     void sort_round_robin(int coreindex)
     {
-        //ever process is equal. cpu time is shared among all processes.
-        for (int i = 0; i < cores[coreindex].num_core_procs; i++)
-        {
-            int index = rand() % cores[coreindex].num_core_procs;
-            swap(cores[coreindex].process_index_list[i], cores[coreindex].process_index_list[index]);
-        }
+        //no sortation necessary
+        ////every process is equal. cpu time is shared among all processes.
+        //for (int i = 0; i < cores[coreindex].num_core_procs; i++)
+        //{
+        //    int index = rand() % cores[coreindex].num_core_procs;
+        //    swap(cores[coreindex].process_index_list[i], cores[coreindex].process_index_list[index]);
+        //}
     }
 
     void sort_FCFS(int coreindex)
@@ -207,18 +228,21 @@ public:
         int proc_pointer = 0;
         for (int i = 0; i < num_cores; i++)
         {
+            cout << "distributing to core" << i << ": ";
             cores[i].process_index_list = (int*)malloc(sizeof(int) * cores[i].num_core_procs);
             for (int j = 0; j < cores[i].num_core_procs && proc_pointer < this->num_procs; j++, proc_pointer++)
             {
                 if (!completed_procs[proc_pointer])
                 {
                     cores[i].process_index_list[j] = proc_pointer;
+                    cout << processes[cores[i].process_index_list[j]].name << " ";
                 }
                 else 
                 {
                     j--;
                 }
             }
+            cout << endl;
             // sort core according to algorithm
             sort_core(i);
         }
@@ -251,8 +275,7 @@ void* manage_cores(void* arg)
             begin_time_quantum = clock();
             cout << "time quantum reached" << endl;
         }
-        
-        //proc.distribute_cores();
+        //proc.distribute_cores(); 
     }
     return (void*)NULL;
 }
@@ -265,14 +288,29 @@ void* run_processor(void* arg)
     while (proc.proc_has_remaining_processes())
     {
         int waittime = 0;
+        
         if (proc.has_remaining_processes(core_id))
         {
-            PCB pcb_task = proc.get_next_process(core_id);
-            waittime = pcb_task.cpu_burst_time;
-            pcb_task.cpu_burst_time = 0;
-            cout << "running " << pcb_task.name << " on core " << core_id << " with priority " << (int)pcb_task.priority << endl;
-            this_thread::sleep_for(chrono::milliseconds(waittime));
-            cout << "task finished after " << waittime << "ms" << endl;
+            PCB pcb_task;
+            if (proc.is_round_robin(core_id))
+            {
+                pcb_task = proc.get_round_robin_process(core_id);
+                waittime = std::min( 1000 * ROUND_ROBIN_QUANTUM, 1000 * ROUND_ROBIN_QUANTUM + pcb_task.cpu_burst_time);
+            }
+            else
+            {
+                pcb_task = proc.get_next_process(core_id);
+                waittime = pcb_task.cpu_burst_time;
+                pcb_task.cpu_burst_time = 0;
+            }
+            // must check waittime for Round Robin processes
+            if (waittime >= 0) 
+            {
+                cout << "running " << pcb_task.name << " on core " << core_id << " with priority "
+                    << (int)pcb_task.priority << " with CPU burst time: " << waittime << endl;
+                this_thread::sleep_for(chrono::milliseconds(waittime));
+            }
+            //cout << "task finished after " << waittime << "ms" << endl;
         }
         else if (proc.get_num_process() >= proc.get_num_cores())
         {
@@ -290,6 +328,7 @@ int main(int argc, char** argv)
     if (argc < 4 || argc % 2 == 1)
     {
         cout << "Improper minimum arguments met for core allocation." << endl;
+        cout << "correct format is: ./a.out PCB.bin <algo 1> <percent given 1> <algo 2> <percent given 2> ... <algo n> <percent given n>" << endl;
         return -1;
     }
     string process_file = argv[1];
@@ -311,7 +350,7 @@ int main(int argc, char** argv)
 
     if (total_percentage != 1.0)
     {
-        cout << "Incorrect percentages given" << endl;
+        cout << "Incorrect percentages given correct format is <algorithm index> <percentage given>" << endl;
         return -1;
     }
 
@@ -319,7 +358,7 @@ int main(int argc, char** argv)
 
     if (!readfile)
     {
-        cout << "an error has occured reading " << process_file << endl;
+        cout << "an error has occured reading file " << process_file << endl;
         return -1;
     }
 
